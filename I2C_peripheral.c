@@ -4,9 +4,18 @@
 #include "hardware/pwm.h"
 #include "pico/i2c_slave.h"
 
-// gpio 2,6,10,21 for motors
-// matching pins for motors are 3,7,11,20
+// pin layout for foward and backward motion on each wheel
+//   L   R
+//F↑ 20  10
+//F↓ 21  11
+//
+//B↑ 3   6
+//B↓ 2   7
+
 // i2c pins 0,1
+// recieves dirL, valL, dirR, valR for L and R sides
+// dir 0-2 (0 = reverse, 1 = stop, 2 = forward)
+// val 0-255
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // I2C properties
@@ -15,7 +24,10 @@
 #define SDA_PIN 0
 #define SCL_PIN 1
 
-const uint MOTOR_PINS[4] = {3, 6, 10, 20}; // setting 3 and 20 to control the rover to go forward
+
+const uint forward[4] = {3, 20, 6, 10}; // BL, FL, BR, FR
+const uint reverse[4] = {2, 21, 7, 11}; // BL, FL, BR, FR
+
 const uint SETS_OF_MOTOR_PINS[8] = {2, 3, 6, 7, 10, 11, 20, 21};
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -27,7 +39,7 @@ void setup_pwm(uint pin)
     uint slice_num = pwm_gpio_to_slice_num(pin);
     pwm_set_wrap(slice_num, 255); // 8-bit res - change to 16 bit for higher pwm frequency? //scale it accordingly to -127 and 127
     // setting channel now for duty cycles
-    pwm_set_chan_level(slice_num, pwm_gpio_to_channel(pin), 1); // starting off at 100% duty, then finding channel for pin - sets all pins to high
+    pwm_set_chan_level(slice_num, pwm_gpio_to_channel(pin), 255); // starting off at 100% duty, then finding channel for pin - sets all pins to high
     pwm_set_enabled(slice_num, true);
 }
 
@@ -67,13 +79,50 @@ int main()
             continue;
         i2c_read_raw_blocking(i2c0, receive_data, 4);
         {
-            // scaling 0-255 to handle negative (backward motion)
-            // making 128 the neutral (stop), 129-255 the forward, 0-127 the backward
-
-            for (int i = 0; i < 4; i++)
-            {
-                set_pwm_duty(MOTOR_PINS[i], receive_data[i]);
+            // very quickly coded, should be functions and/or for loops
+            switch(receive_data[0]){
+                case 0:
+                    set_pwm_duty(forward[0], 255 - receive_data[1]);
+                    set_pwm_duty(forward[1], 255 - receive_data[1]);
+                    set_pwm_duty(reverse[0], 255);
+                    set_pwm_duty(reverse[1], 255);
+                    break;
+                case 1: 
+                    set_pwm_duty(forward[0], 255);
+                    set_pwm_duty(forward[1], 255);
+                    set_pwm_duty(reverse[0], 255);
+                    set_pwm_duty(reverse[1], 255);
+                    break;
+                case 2:
+                    set_pwm_duty(forward[0], 255);
+                    set_pwm_duty(forward[1], 255);
+                    set_pwm_duty(reverse[0], 255 - receive_data[1]);
+                    set_pwm_duty(reverse[1], 255 - receive_data[1]);
+                    break;
             }
+
+            switch(receive_data[2]){
+                case 0:
+                    set_pwm_duty(forward[2], 255 - receive_data[3]);
+                    set_pwm_duty(forward[3], 255 - receive_data[3]);
+                    set_pwm_duty(reverse[2], 255);
+                    set_pwm_duty(reverse[3], 255);
+                    break;
+                case 1: 
+                    set_pwm_duty(forward[2], 255);
+                    set_pwm_duty(forward[3], 255);
+                    set_pwm_duty(reverse[2], 255);
+                    set_pwm_duty(reverse[3], 255);
+                    break;
+                case 2:
+                    set_pwm_duty(forward[2], 255);
+                    set_pwm_duty(forward[3], 255);
+                    set_pwm_duty(reverse[2], 255 - receive_data[3]);
+                    set_pwm_duty(reverse[3], 255 - receive_data[3]);
+                    break;
+            }
+
+            // set pwm duty motor pins left reverse 255 motor pins right forward 255-receive_data[2,4]
         }
 
         sleep_ms(10); // avoids overcrowding the I2C
